@@ -1,4 +1,4 @@
-##### Code to analyses the simulations & plots op characteristics of models
+##### Code to analyses the simulations & to plot the op characteristics of models
 ##### Requires inputs from simulations.R 
 
 # Function to extract op characteristics from a list of simulations
@@ -26,15 +26,15 @@ op_char <- function(sims, alpha=0.05) {
     input[i,6] <- sims[[i]]$tend
     input[i,7] <- mean(sims[[i]]$cox.t[, "convergence"], na.rm = TRUE)
     
-    # true HR r^(-1/relapse_scale)
-    delta.e <- input[i,1]^(-1/relapse_scale)
-    delta.l <- input[i,2]^(-1/relapse_scale)
+    # true HR r^(-1/m_relapse$scale)
+    delta.e <- input[i,1]^(-1/m_relapse$scale)
+    delta.l <- input[i,2]^(-1/m_relapse$scale)
     
     # true HR overall
-    lambda.0 = exp(relapse_coefficients)
+    lambda.0 = exp(m_relapse$coefficients)
     lambda.1 = lambda.0*input[i,1]
-    S0 <- pweibull( input[i,5], shape=relapse_scale, scale=lambda.0, lower.tail=FALSE )
-    S1 <- pweibull( input[i,5], shape=relapse_scale, scale=lambda.1, lower.tail=FALSE )
+    S0 <- pweibull( input[i,5], shape=m_relapse$scale, scale=lambda.0, lower.tail=FALSE )
+    S1 <- pweibull( input[i,5], shape=m_relapse$scale, scale=lambda.1, lower.tail=FALSE )
     omega_bar <- 1/2*(S0+S1)
     
     delta <- exp((1-omega_bar)*log(delta.e)+omega_bar*log(delta.l))
@@ -89,7 +89,8 @@ op_char <- function(sims, alpha=0.05) {
   }
   
   # change arrays to dataframe & rename columns
-    # bind three array together
+  
+  # bind three array together
   output <- cbind(input, results, results.early, results.late)
   output <- as.data.frame(output)
   
@@ -98,6 +99,7 @@ op_char <- function(sims, alpha=0.05) {
                         "Mean","SD","MSE","Bias","Power","Coverage",
                         "Mean.early","SD.early","MSE.early","Bias.early","Power.early","Coverage.early",
                         "Mean.late","SD.late","MSE.late","Bias.late","Power.late","Coverage.late")
+  
   
   # round results to 3 decimals
   output <- apply(output, 2, round, digits=3)
@@ -141,8 +143,8 @@ analyse_results <- function(filename=NULL){
   table <- rbind(tmp, tmp.early, tmp.late)
   
   # define delta (true HR) from values of r
-  table$delta <- paste0(round(table$r.e^(-1/relapse_scale), digits=2), " - ",
-                        round(table$r.l^(-1/relapse_scale), digits=2))
+  table$delta <- paste0(round(table$r.e^(-1/m_relapse$scale), digits=2), " - ",
+                        round(table$r.l^(-1/m_relapse$scale), digits=2))
   
   # plot Mean & SE (with preview)
   fig <- ggplot(data=table, 
@@ -150,9 +152,11 @@ analyse_results <- function(filename=NULL){
     geom_errorbar(aes(ymin=Mean-SD/sqrt(nSim), ymax=Mean+SD/sqrt(nSim)), width=.1) +
     ggtitle("Mean & SE") +
     geom_line()+geom_point() + 
+    xlab("Analysis change point") + ylab("") +
+    scale_color_discrete(expression(HR[e] - HR[l])) +
     facet_grid(sample+nSim~HR, scales="free_x", labeller=label_both)
   ggsave(filename = paste0(PATH,"/Figures/",label,"Mean.png"),
-         width = 20, height = 14, units = "cm")
+         width = 20, height = 18, units = "cm")
   print(fig)
   
   # re-organise table in long form
@@ -165,9 +169,11 @@ analyse_results <- function(filename=NULL){
       ggplot(aes(x=tend, y=value, colour=delta)) +
       ggtitle(scale_char) +
       geom_line()+geom_point() + 
+      xlab("Analysis change point") + ylab("") +
+      scale_color_discrete(expression(HR[e] - HR[l])) +
       facet_grid(sample+nSim~HR, scales="free_x", labeller=label_both)
     ggsave(filename = paste0(PATH,"/Figures/",label,scale_char,".png"),
-           width = 20, height = 14, units = "cm")
+           width = 20, height = 18, units = "cm")
   }
   
   # plot each of the op characteristics
@@ -183,19 +189,19 @@ analyse_results <- function(filename=NULL){
 
 
 # analyse simulations
-table <- analyse_results("sims_1.RData")
-table <- analyse_results("sims_2.RData")
-table <- analyse_results("sims_3.RData")
-table <- analyse_results("sims_4.RData")
-table <- analyse_results("sims_5.RData")
-table <- analyse_results("sims_6.RData")
+analyse_results("sims_1.RData")
+analyse_results("sims_2.RData")
+analyse_results("sims_3.RData")
+analyse_results("sims_4.RData")
+analyse_results("sims_5.RData")
+analyse_results("sims_6.RData")
 
 
 
 ####### Model 1: simulate the null hypothesis #######
 table <- analyse_results("sims_1.RData")
 
-# Use only sample = 167
+# reshape table
 table.1 <- melt(table, id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
 
 # plot MSE, Bias, Power, Coverage
@@ -209,17 +215,29 @@ ggplot(data=table.1[table.1$variable %in% c("MSE","Bias","Power","Coverage"), ],
   theme_bw(base_size = 20)
 ggsave(filename = paste0(PATH,"/Figures/fig1.png"), width = 24, height = 18, units = "cm")
 
+# plot Convergence of the cox ph + covariate
+ggplot(data=table.1[table.1$HR=="HR overall" & table.1$variable %in% c("Convergence"), ],
+       aes(x=tend, y=value, colour=delta)) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(0.9, 1) +
+  # scale_color_discrete("sample") +
+  scale_color_discrete(expression(HR[e] - HR[l])) +
+  facet_grid(.~sample, scales="free_y", labeller=label_both) + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Convergence_fig1.png"), width = 24, height = 10, units = "cm")
 
 
 
 ####### Model 2: constant overall treatment effect #######
 table <- analyse_results("sims_2.RData")
 
-# Use only sample = 167
-table.2 <- melt(table[table$sample==167, ], id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
+# reshape table 
+table.2 <- melt(table, id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
 
 # plot MSE, Bias, Power, Coverage
-ggplot(data=table.2[table.2$variable %in% c("MSE","Bias","Power","Coverage"), ],
+# Use only sample = 167
+ggplot(data=table.2[table.2$sample==167 & table.2$variable %in% c("MSE","Bias","Power","Coverage"), ],
        aes(x=tend, y=value, group=delta, colour=delta)) +
   geom_line()+geom_point() +
   geom_vline(xintercept = 20, linetype="dashed") +
@@ -229,17 +247,50 @@ ggplot(data=table.2[table.2$variable %in% c("MSE","Bias","Power","Coverage"), ],
   theme_bw(base_size = 20)
 ggsave(filename = paste0(PATH,"/Figures/fig2.png"), width = 24, height = 18, units = "cm")
 
+# plot Convergence of the cox ph + covariate
+ggplot(data=table.2[table.2$HR=="HR overall" & table.2$variable %in% c("Convergence"), ],
+       aes(x=tend, y=value, group=delta, colour=delta)) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(0.9, 1) +
+  scale_color_discrete(expression(HR[e] - HR[l])) +
+  facet_grid(.~sample, scales="free_y", labeller=label_both) + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Convergence_fig2.png"), width = 24, height = 10, units = "cm")
+
+# plot Bias
+ggplot(data=table.2[table.2$variable %in% c("Bias"), ],
+       aes(x=tend, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(-0.5, 0.5) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Bias_fig2.png"), width = 24, height = 24, units = "cm")
+
+# plot Power
+ggplot(data=table.2[table.2$variable %in% c("Power"), ],
+       aes(x=tend, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(0, 1) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Power_fig2.png"), width = 24, height = 24, units = "cm")
 
 
 
 ####### Model 3: late efficacy (HRearly = 1), treatment effect only after month 20) ######
 table <- analyse_results("sims_3.RData")
 
-# Use only sample = 167
-table.3 <- melt(table[table$sample==167, ], id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
+# reshape table 
+table.3 <- melt(table, id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
 
 # plot MSE, Bias, Power, Coverage
-ggplot(data=table.3[table.3$variable %in% c("MSE","Bias","Power","Coverage"), ],
+# Use only sample = 167
+ggplot(data=table.3[table.3$sample==167 & table.3$variable %in% c("MSE","Bias","Power","Coverage"), ],
        aes(x=tend, y=value, group=delta, colour=delta)) +
   geom_line()+geom_point() +
   geom_vline(xintercept = 20, linetype="dashed") +
@@ -249,17 +300,50 @@ ggplot(data=table.3[table.3$variable %in% c("MSE","Bias","Power","Coverage"), ],
   theme_bw(base_size = 20)
 ggsave(filename = paste0(PATH,"/Figures/fig3.png"), width = 24, height = 18, units = "cm")
 
+# plot Convergence of the cox ph + covariate
+ggplot(data=table.3[table.3$HR=="HR overall" & table.3$variable %in% c("Convergence"), ],
+       aes(x=tend, y=value, group=delta, colour=delta)) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(0.9, 1) +
+  scale_color_discrete(expression(HR[e] - HR[l])) +
+  facet_grid(.~sample, scales="free_y", labeller=label_both) + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Convergence_fig3.png"), width = 24, height = 10, units = "cm")
+
+# plot Bias
+ggplot(data=table.3[table.3$variable %in% c("Bias"), ],
+       aes(x=tend, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(-0.5, 0.5) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Bias_fig3.png"), width = 24, height = 24, units = "cm")
+
+# plot Power
+ggplot(data=table.3[table.3$variable %in% c("Power"), ],
+       aes(x=tend, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(0, 1) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Power_fig3.png"), width = 24, height = 24, units = "cm")
 
 
 
 ####### Model 4: early efficacy (HRlate = 1), treatment effect up until month 20) ######
 table <- analyse_results("sims_4.RData")
 
-# Use only sample = 167
-table.4 <- melt(table[table$sample==167, ], id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
+# reshape table
+table.4 <- melt(table, id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
 
 # plot MSE, Bias, Power, Coverage
-ggplot(data=table.4[table.4$variable %in% c("MSE","Bias","Power","Coverage"), ],
+# Use only sample = 167
+ggplot(data=table.4[table.4$sample==167 & table.4$variable %in% c("MSE","Bias","Power","Coverage"), ],
        aes(x=tend, y=value, group=delta, colour=delta)) +
   geom_line()+geom_point() +
   geom_vline(xintercept = 20, linetype="dashed") +
@@ -269,17 +353,50 @@ ggplot(data=table.4[table.4$variable %in% c("MSE","Bias","Power","Coverage"), ],
   theme_bw(base_size = 20)
 ggsave(filename = paste0(PATH,"/Figures/fig4.png"), width = 24, height = 18, units = "cm")
 
+# plot Convergence of the cox ph + covariate
+ggplot(data=table.4[table.4$HR=="HR overall" & table.4$variable %in% c("Convergence"), ],
+       aes(x=tend, y=value, group=delta, colour=delta)) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(0.9, 1) +
+  scale_color_discrete(expression(HR[e] - HR[l])) +
+  facet_grid(.~sample, scales="free_y", labeller=label_both) + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Convergence_fig4.png"), width = 24, height = 10, units = "cm")
+
+# plot Bias
+ggplot(data=table.4[table.4$variable %in% c("Bias"), ],
+       aes(x=tend, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(-0.5, 0.5) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Bias_fig4.png"), width = 24, height = 24, units = "cm")
+
+# plot Power
+ggplot(data=table.4[table.4$variable %in% c("Power"), ],
+       aes(x=tend, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(0, 1) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Power_fig4.png"), width = 24, height = 24, units = "cm")
 
 
 
 ####### ####### Model 5: different treatment effects before/after month 20  ######
 table <- analyse_results("sims_5.RData")
 
-# Use only sample = 167
-table.5 <- melt(table[table$sample==167, ], id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
+# reshape table
+table.5 <- melt(table, id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
 
 # plot MSE, Bias, Power, Coverage
-ggplot(data=table.5[table.5$variable %in% c("MSE","Bias","Power","Coverage"), ],
+# Use only sample = 167
+ggplot(data=table.5[table.5$sample==167 & table.5$variable %in% c("MSE","Bias","Power","Coverage"), ],
        aes(x=tend, y=value, group=delta, colour=delta)) +
   geom_line()+geom_point() +
   geom_vline(xintercept = 20, linetype="dashed") +
@@ -289,17 +406,50 @@ ggplot(data=table.5[table.5$variable %in% c("MSE","Bias","Power","Coverage"), ],
   theme_bw(base_size = 20)
 ggsave(filename = paste0(PATH,"/Figures/fig5.png"), width = 24, height = 18, units = "cm")
 
+# plot Convergence of the cox ph + covariate
+ggplot(data=table.5[table.5$HR=="HR overall" & table.5$variable %in% c("Convergence"), ],
+       aes(x=tend, y=value, group=delta, colour=delta)) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(0.9, 1) +
+  scale_color_discrete(expression(HR[e] - HR[l])) +
+  facet_grid(.~sample, scales="free_y", labeller=label_both) + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Convergence_fig5.png"), width = 24, height = 10, units = "cm")
+
+# plot Bias
+ggplot(data=table.5[table.5$variable %in% c("Bias"), ],
+       aes(x=tend, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(-0.5, 0.5) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Bias_fig5.png"), width = 24, height = 24, units = "cm")
+
+# plot Power
+ggplot(data=table.5[table.5$variable %in% c("Power"), ],
+       aes(x=tend, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("Analysis change point") + ylab("") + ylim(0, 1) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Power_fig5.png"), width = 24, height = 24, units = "cm")
 
 
 
 ####### Model 6: different treatment effects, wrong change point tau ######
 table <- analyse_results("sims_6.RData")
 
-# Use only sample = 167
-table.6 <- melt(table[table$sample==167, ], id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
+# reshape table
+table.6 <- melt(table, id = c("HR","r.e","r.l","nSim","sample","tau","tend","delta"))
 
 # plot MSE, Bias, Power, Coverage
-ggplot(data=table.6[table.6$variable %in% c("MSE","Bias","Power","Coverage"), ],
+# Use only sample = 167
+ggplot(data=table.6[table.6$sample==167 & table.6$variable %in% c("MSE","Bias","Power","Coverage"), ],
        aes(x=tau, y=value, group=delta, colour=delta)) +
   geom_line()+geom_point() +
   geom_vline(xintercept = 20, linetype="dashed") +
@@ -309,8 +459,41 @@ ggplot(data=table.6[table.6$variable %in% c("MSE","Bias","Power","Coverage"), ],
   theme_bw(base_size = 20)
 ggsave(filename = paste0(PATH,"/Figures/fig6.png"), width = 24, height = 18, units = "cm")
 
+# plot Convergence of the cox ph + covariate
+ggplot(data=table.6[table.6$HR=="HR overall" & table.6$variable %in% c("Convergence"), ],
+       aes(x=tau, y=value, group=delta, colour=delta)) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("True change point") + ylab("") + ylim(0.9, 1) +
+  scale_color_discrete(expression(HR[e] - HR[l])) +
+  facet_grid(.~sample, scales="free_y", labeller=label_both) + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Convergence_fig6.png"), width = 24, height = 10, units = "cm")
 
+# plot Bias
+ggplot(data=table.6[table.6$variable %in% c("Bias"), ],
+       aes(x=tau, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("True change point") + ylab("") + ylim(-0.5, 0.5) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Bias_fig6.png"), width = 24, height = 24, units = "cm")
 
+# plot Power
+ggplot(data=table.6[table.6$variable %in% c("Power"), ],
+       aes(x=tau, y=value, group=factor(sample), colour=factor(sample))) +
+  geom_line()+geom_point() +
+  geom_vline(xintercept = 20, linetype="dashed") +
+  xlab("True change point") + ylab("") + ylim(0, 1) +
+  scale_color_discrete("sample") +
+  facet_grid(delta~HR, scales="free_y") + 
+  theme_bw(base_size = 20)
+ggsave(filename = paste0(PATH,"/Figures/Power_fig6.png"), width = 24, height = 24, units = "cm")
+
+# tidy up
+rm(table)
 
 ##################################################
 # save all data
